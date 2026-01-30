@@ -1,1 +1,1 @@
-# simple-ai-pipeline
+simple pipeline for classification task
