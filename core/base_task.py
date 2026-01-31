@@ -22,13 +22,12 @@ class BaseTask(ABC):
         self._config = None
         self._validate_config()
 
+        self._init_global_variables()
         self._injected_data = input_data
         self._inside_data = None
         self._load_data()
 
         self._result = None
-
-        self._init_global_variables()
 
     def _init_global_variables(self):
         global project

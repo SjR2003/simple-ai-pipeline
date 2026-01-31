@@ -1,1 +1,19 @@
 task_name: training
+
+# model_file_name: pytorch_mlp
+# sklearn_model_path: null
+
+# model_params:
+#   hidden_sizes: 
+#     - 64
+#     - 32
+#   dropout_rate: 0.2
+#   learning_rate: 0.001
+
+
+model_file_name: sklearn_classifier
+sklearn_model_path: sklearn.ensemble.GradientBoostingClassifier
+
+model_params:
+  n_estimators: 20
+  learning_rate: 0.1

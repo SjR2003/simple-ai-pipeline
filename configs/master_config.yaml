@@ -4,4 +4,5 @@ task_order:
   - task_load_ds.yaml
   - task_eda.yaml
   - task_preprocess.yaml
-  - task_dim_reduction.yaml
+  # - task_dim_reduction.yaml
+  - task_training.yaml
