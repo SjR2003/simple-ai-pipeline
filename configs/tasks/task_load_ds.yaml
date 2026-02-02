@@ -1,10 +1,10 @@
 task_name: load_ds
 
-project: Industrial_fault_detection
-experiment: system_test_1
+project: system_test
+experiment: system_test
 seed: 93
 
-dataset_src: https://www.kaggle.com/datasets/drsaeedmohsen/ucihar-dataset
+dataset_src: empty
 dataset_path: E:\Uni\the_basics_of_intelligence\2\practice\HW4\ai_pipeline\data\Industrial_fault_detection.csv
 target_name: Fault_Type
-show: false # print result or show plots
+show: false # show plots

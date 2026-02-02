@@ -1,12 +1,13 @@
-import logging
-import logging.config
 import os
 import yaml
+import logging
+import logging.config
 from datetime import datetime
 
 _LOGGER_CONFIG_PATH = os.path.join("configs", "logger.yaml")
 
 _logger_instance = None
+
 
 def setup_logger(name: str = "main") -> logging.Logger:
     """Initialize and configure a logger with timestamped log files.
@@ -21,9 +22,9 @@ def setup_logger(name: str = "main") -> logging.Logger:
     global _logger_instance
     if _logger_instance:
         return _logger_instance
-    
+
     try:
-        with open(_LOGGER_CONFIG_PATH, 'r') as f:
+        with open(_LOGGER_CONFIG_PATH, "r") as f:
             config = yaml.safe_load(f)
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -62,10 +63,7 @@ def _fallback_logger(reason: str, name: str) -> logging.Logger:
         level=logging.INFO,
         format="%(asctime)s - %(levelname)s - %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
-        handlers=[
-            logging.FileHandler(log_file),
-            logging.StreamHandler()
-        ]
+        handlers=[logging.FileHandler(log_file), logging.StreamHandler()],
     )
     logger = logging.getLogger(name)
     logger.warning(f"⚠️   {reason}, using basic fallback config.")

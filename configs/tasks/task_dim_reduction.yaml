@@ -1,16 +1,11 @@
 task_name: dim_reduction
 
-method: pca
-n_components: 12
+method: lda
+n_components: 20
 
 show: false
 
 pca_svd_solver: auto
-
-tsne_perplexity: 30
-tsne_n_iter: 1000
-tsne_init: random
-tsne_use_pca_init: true
 
 umap_n_neighbors: 15
 umap_min_dist: 1.0

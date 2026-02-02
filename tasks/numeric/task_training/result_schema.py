@@ -1,8 +1,13 @@
 from pydantic import BaseModel
-import pandas as pd
+from typing import Any, Dict
+
+from tasks.numeric.task_preprocess_ds.result_schema import PreprocessResult
 
 
 class TrainResult(BaseModel):
-    x: pd.DataFrame
-    y: pd.Series
-    model_config = {"arbitrary_types_allowed": True}
+    model: Any
+    metrics: dict
+    data: PreprocessResult
+    model_params: Dict[str, Any]
+    model_name: str
+    model_type: str

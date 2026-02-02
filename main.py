@@ -1,14 +1,17 @@
 import os
-import mlflow
 import yaml
+import mlflow
+import logging
 import argparse
-from pathlib import Path
 import warnings
+from pathlib import Path
 
 from utils.logger import setup_logger
 from core.task_registry import get_task
 from core.base_task import BaseTask
 from core.task_loader import import_all_tasks
+
+logging.getLogger("mlflow").setLevel(logging.ERROR)
 
 
 def load_yaml_config(path: str) -> dict:
@@ -20,7 +23,7 @@ def snake_to_pascal(name: str) -> str:
     return "".join(part.capitalize() for part in name.split("_"))
 
 
-def init_mlflow(exp):
+def init_mlflow(exp, project_name):
     warnings.filterwarnings(
         "ignore", category=FutureWarning, message="Filesystem tracking backend.*"
     )
@@ -28,7 +31,9 @@ def init_mlflow(exp):
     out = Path(__file__).parent
     mlflow.set_tracking_uri(f"file:{out / 'mlruns'}")
     mlflow.set_experiment(exp)
-    mlflow.start_run(run_name="pipeline_run")
+    mlflow.enable_system_metrics_logging()
+
+    mlflow.start_run(run_name=project_name)
 
 
 def run_task_from_config(config_path, result=None):
@@ -71,7 +76,6 @@ def run_all_tasks(config_dir: str):
     with open(task_order_path, "r") as f:
         config = yaml.safe_load(f)
         task_order = config.get("task_order", [])
-        experiment = config.get("experiment", "ai pipeline")
 
     config_dir = os.path.join(config_dir, "tasks")
     import_all_tasks(root_dir="tasks", base_module="tasks")
@@ -80,8 +84,18 @@ def run_all_tasks(config_dir: str):
         logger.warning("⚠️   No tasks specified in master_config.yaml")
         return
 
+    with open(os.path.join(config_dir, "task_load_ds.yaml"), "r") as f:
+        config = yaml.safe_load(f)
+        experiment = config.get("experiment", "ai pipeline")
+        project = config.get("project", "ai pipeline")
+
+    init_mlflow(experiment, project)
+
     result = None
-    init_mlflow(experiment)
+    result = run_task_from_config(
+        os.path.join(config_dir, "task_load_ds.yaml"), result=result
+    )
+
     for task_file in task_order:
         result = run_task_from_config(
             os.path.join(config_dir, task_file), result=result

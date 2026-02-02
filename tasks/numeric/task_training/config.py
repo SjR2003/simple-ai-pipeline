@@ -5,6 +5,6 @@ class TrainConfig(BaseModel):
     task_name: str
 
     model_file_name: str
-    sklearn_model_path: str | None
-
+    model_type: str
     model_params: dict
+    train_params: dict = {}

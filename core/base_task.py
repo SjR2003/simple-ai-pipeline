@@ -1,11 +1,14 @@
-from abc import ABC, abstractmethod
-from typing import Optional, Any
-from pathlib import Path
-import warnings
-import logging
-from altair import value
-import mlflow
 import os
+import os
+import re
+import json
+import mlflow
+import logging
+from pathlib import Path
+from typing import Optional, Any, Dict
+from abc import ABC, abstractmethod
+
+from utils.git_info import get_git_info_gitpython
 
 project = None
 seed = None
@@ -30,6 +33,13 @@ class BaseTask(ABC):
         self._result = None
 
     def _init_global_variables(self):
+        global output_path
+        output_path = (
+            Path(output_path) if not isinstance(output_path, Path) else output_path
+        )
+
+        output_path.mkdir(parents=True, exist_ok=True)
+
         global project
         if (
             "project" in self._config_dict
@@ -45,20 +55,39 @@ class BaseTask(ABC):
             and len(self._config_dict["experiment"]) > 0
             and not exp
         ):
-            exp = self._config_dict["experiment"]
+            base_exp = self._config_dict["experiment"]
+
+            exp_root = os.path.join(output_path, self._project)
+
+            max_suffix = -1
+            pattern = re.compile(rf"^{re.escape(base_exp)}(?:_(\d+))?$")
+
+            if os.path.isdir(exp_root):
+                for name in os.listdir(exp_root):
+                    match = pattern.match(name)
+                    if match:
+                        suffix = match.group(1)
+                        suffix = int(suffix) if suffix is not None else 0
+                        max_suffix = max(max_suffix, suffix)
+
+            if max_suffix < 0:
+                max_suffix = 0
+            else:
+                max_suffix = max_suffix + 1
+
+            mlflow.set_tag("version", f"v{max_suffix}.0.0")
+            exp = f"{base_exp}_{max_suffix}"
+
+            git_info = get_git_info_gitpython()
+            if git_info:
+                mlflow.set_tag("commit_hash", git_info["short_hash"])
+
         self._exp = exp
 
         global seed
         if "seed" in self._config_dict and not seed:
             seed = self._config_dict.get("seed", 42)
         self._seed = seed
-
-        global output_path
-        output_path = (
-            Path(output_path) if not isinstance(output_path, Path) else output_path
-        )
-
-        output_path.mkdir(parents=True, exist_ok=True)
 
         if self._project and self._exp:
             self._output_path = output_path / self._project / self._exp
@@ -121,45 +150,109 @@ class BaseTask(ABC):
         else:
             self._logger.warning("No result to log.")
 
-    def _log_params(self, key, value) -> None:
+    def _log_params(self, params: dict) -> None:
         """Logs parameters to MLflow.
 
         Args:
             params (dict): A dictionary of parameters to log.
         """
+        for key, value in params.items():
+            mlflow.log_param(key, value)
+            self._logger.debug(f"Logged parameter {key}: {value} to MLflow.")
+
+    def _log_param(self, key, value) -> None:
+        """Logs parameter to MLflow."""
 
         mlflow.log_param(key, value)
         self._logger.debug(f"Logged parameter {key}: {value} to MLflow.")
 
-    def _log_metrics(self, key, value) -> None:
+    def _log_metric(self, key, value, step: int = None) -> None:
         """Logs metrics to MLflow.
 
         Args:
             metrics (dict): A dictionary of metrics to log.
         """
-        mlflow.log_metric(key, value)
+        if step is not None:
+            mlflow.log_metric(key, value, step=step)
+        else:
+            mlflow.log_metric(key, value)
         self._logger.debug(f"Logged metric {key}: {value} to MLflow.")
 
-    def _log_model(self, model_key: str, model_type: str) -> None:
-        """Logs the model to MLflow.
-
-        Args:
-            model_key: A string identifier for the model (e.g., "pca_model", "random_forest")
-            model_type: Type of model ("sklearn", etc.)
-        """
+    def _log_model(self, model_key: str, model_type: str, signature) -> None:
         if model_type == "sklearn":
             mlflow.sklearn.log_model(
-                sk_model=self._result,
-                artifact_path=model_key,
+                sk_model=self._model._model,
+                artifact_path=f"models_{model_key}",
                 registered_model_name=model_key,
+                signature=signature,
             )
 
-            if hasattr(self._result, "get_params"):
-                params = self._result.get_params()
-                for param_name, param_value in params.items():
-                    if isinstance(param_value, (int, float, str, bool)):
-                        mlflow.log_param(f"{model_key}_{param_name}", param_value)
-
-            self._logger.debug(
-                f"Logged model {model_key}: {type(self._result).__name__} to MLflow."
+        elif model_type == "pytorch":
+            mlflow.pytorch.log_model(
+                pytorch_model=self._model._model,
+                artifact_path=f"models_{model_key}",
+                registered_model_name=model_key,
+                signature=signature,
             )
+
+        elif model_type == "xgboost":
+            mlflow.xgboost.log_model(
+                xgb_model=self._model._model,
+                artifact_path=f"models_{model_key}",
+                registered_model_name=model_key,
+                signature=signature,
+            )
+
+        elif model_type == "catboost":
+            mlflow.catboost.log_model(
+                cb_model=self._model._model,
+                artifact_path=f"models_{model_key}",
+                registered_model_name=model_key,
+                signature=signature,
+            )
+
+        elif model_type == "lightgbm":
+            mlflow.lightgbm.log_model(
+                lgb_model=self._model._model,
+                artifact_path=f"models_{model_key}",
+                registered_model_name=model_key,
+                signature=signature,
+            )
+
+    def _log_dataset(
+        self,
+        fingerprint: Dict[str, Any],
+        out_path: str,
+    ) -> None:
+        """
+        Log dataset fingerprint to MLflow in a standardized way.
+
+        Args:
+            fingerprint: Dataset fingerprint dictionary
+            artifact_path: Path within MLflow artifacts
+        """
+        if not fingerprint:
+            return
+
+        mlflow.log_params(
+            {
+                "dataset.rows": fingerprint.get("row_count", 0),
+                "dataset.columns": fingerprint.get("column_count", 0),
+                "dataset.target": fingerprint.get("target_column", "unknown"),
+                "dataset.name": fingerprint.get("dataset_name", "unknown"),
+            }
+        )
+
+        mlflow.set_tag("dataset.hash", fingerprint.get("partial_sha256", "unknown"))
+
+        with open(file=f"{out_path}", mode="w") as f:
+            json.dump(fingerprint, f, indent=2)
+            mlflow.log_artifact(f"{out_path}", f"dataset_fingerprint.json")
+
+        dataset = mlflow.data.from_pandas(
+            self._inside_data,
+            source=self._config.dataset_src,
+            name=self._config.project,
+            targets=self._config.target_name,
+        )
+        mlflow.log_input(dataset)

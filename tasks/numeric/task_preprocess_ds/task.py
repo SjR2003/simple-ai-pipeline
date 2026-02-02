@@ -1,15 +1,15 @@
 import shutil
 import datetime
+import warnings
 import numpy as np
 import pandas as pd
 from pathlib import Path
-from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler, MinMaxScaler, RobustScaler
-from sklearn.impute import SimpleImputer, KNNImputer
-from imblearn.over_sampling import SMOTE, RandomOverSampler
-from imblearn.under_sampling import RandomUnderSampler
 from imblearn.combine import SMOTETomek
-import warnings
+from sklearn.model_selection import train_test_split
+from sklearn.impute import SimpleImputer, KNNImputer
+from imblearn.under_sampling import RandomUnderSampler
+from imblearn.over_sampling import SMOTE, RandomOverSampler
+from sklearn.preprocessing import StandardScaler, MinMaxScaler, RobustScaler
 
 from core.base_task import BaseTask
 from core.task_registry import register_task
@@ -27,27 +27,26 @@ saved_state = None
 class PreprocessDs(BaseTask):
     def __init__(self, config: dict, input_data: any):
         super().__init__(config, input_data)
-        self._preprocessing_methods = []
 
         global current_state, saved_state
         if saved_state == None:
             saved_state = current_state
-            self._new_run = True
+            self._new_id = True
         elif current_state == saved_state:
-            self._new_run = False
+            self._new_id = False
 
         self._output_path = self._output_path / Path(__file__).resolve().parent.name
-        if self._output_path.exists() and self._new_run:
+        if self._output_path.exists() and self._new_id:
             shutil.rmtree(self._output_path)
 
         self._output_path.mkdir(exist_ok=True, parents=True)
 
-        self._run_num = 0
-        result_dir = f"result_{self._run_num}"
+        self._run_id = 0
+        result_dir = f"result_{self._run_id}"
 
-        if self._output_path.exists() and not self._new_run:
-            self._run_num = self._get_last_folder()
-            result_dir = f"result_{self._run_num}"
+        if self._output_path.exists() and not self._new_id:
+            self._run_id = self._get_last_folder()
+            result_dir = f"result_{self._run_id}"
 
         self._output_path = self._output_path / result_dir
         self._output_path.mkdir(exist_ok=True, parents=True)
@@ -55,22 +54,16 @@ class PreprocessDs(BaseTask):
     def _validate_config(self) -> None:
         self._config = PreprocessDsConfig.model_validate(self._config_dict)
 
-    def _load_data(self):
+    def _load_data(self) -> None:
         self._df = self._injected_data.x.copy()
         self._df["target"] = self._injected_data.y.copy().apply(lambda x: int(x))
 
-    def _handle_missing_values(self):
-        if not self._config.missing_data_method:
+    def _handle_missing_values(self) -> None:
+        method = self._config.missing_data_method
+        self._log_param("preprocess - missing handling method", method)
+        if not method:
             return
 
-        self._preprocessing_methods.append(
-            {
-                "task": "handle_missing_values",
-                "method": self._config.missing_data_method,
-            }
-        )
-
-        method = self._config.missing_data_method
         numeric_cols = self._df.select_dtypes(include=[np.number]).columns
         categorical_cols = self._df.select_dtypes(
             include=["object", "category"]
@@ -85,14 +78,12 @@ class PreprocessDs(BaseTask):
             imputer = SimpleImputer(strategy="median")
             self._df[numeric_cols] = imputer.fit_transform(self._df[numeric_cols])
         elif method == "mode":
-            # For categorical columns
             for col in categorical_cols:
                 self._df[col] = self._df[col].fillna(
                     self._df[col].mode()[0]
                     if not self._df[col].mode().empty
                     else "Unknown"
                 )
-            # For numeric columns
             imputer = SimpleImputer(strategy="most_frequent")
             self._df[numeric_cols] = imputer.fit_transform(self._df[numeric_cols])
         elif method == "knn":
@@ -107,16 +98,13 @@ class PreprocessDs(BaseTask):
         upper_bound = Q3 + 1.5 * IQR
         return (df[column] < lower_bound) | (df[column] > upper_bound)
 
-    def _handle_outliers(self):
-        if not self._config.outlier_method:
+    def _handle_outliers(self) -> None:
+        method = self._config.outlier_method
+        self._log_param("preprocess - outliers handling method", method)
+        if not method:
             return
 
-        self._preprocessing_methods.append(
-            {"task": "handle_outliers", "method": self._config.outlier_method}
-        )
-        method = self._config.outlier_method
         numeric_cols = self._df.select_dtypes(include=[np.number]).columns
-
         if method == "remove":
             for col in numeric_cols:
                 outliers = self._detect_outliers_iqr(self._df, col)
@@ -134,16 +122,13 @@ class PreprocessDs(BaseTask):
                 if (self._df[col] > 0).all():
                     self._df[col] = np.log1p(self._df[col])
 
-    def _encode_categorical(self):
-
+    def _encode_categorical(self) -> None:
+        self._log_param("preprocess - encoding method", "one hot encoding")
         categorical_cols = self._df.select_dtypes(
             include=["object", "category"]
         ).columns
 
         if len(categorical_cols.to_list()) > 0:
-            self._preprocessing_methods.append(
-                {"task": "encode_categorical", "method": "one_hot_encoding"}
-            )
             for col in categorical_cols:
                 if self._df[col].nunique() <= 10:
                     self._df = pd.get_dummies(
@@ -152,14 +137,12 @@ class PreprocessDs(BaseTask):
                 else:
                     self._df[col] = pd.factorize(self._df[col])[0]
 
-    def _normalize_data(self):
+    def _normalize_data(self) -> None:
+        method = self._config.normalization_method
+        self._log_param("preprocess - normalize handling method", method)
         if not self._config.normalization_method:
             return
 
-        self._preprocessing_methods.append(
-            {"task": "normalize_data", "method": self._config.normalization_method}
-        )
-        method = self._config.normalization_method
         numeric_cols = self._df.select_dtypes(include=[np.number]).columns
         numeric_cols = numeric_cols.drop("target")
         if method == "minmax":
@@ -173,7 +156,6 @@ class PreprocessDs(BaseTask):
             self._df[numeric_cols] = scaler.fit_transform(self._df[numeric_cols])
 
     def _analyze_class_imbalance(self, y: pd.Series) -> dict:
-        """Analyze class distribution and return imbalance statistics"""
         class_counts = y.value_counts()
         total_samples = len(y)
 
@@ -199,18 +181,12 @@ class PreprocessDs(BaseTask):
         return imbalance_stats
 
     def _handle_class_imbalance(self, X: pd.DataFrame, y: pd.Series) -> tuple:
+        method = self._config.imbalance_method
+        self._log_param("preprocess - imbalance handling method", method)
         if not self._config.imbalance_method:
             return X, y
 
-        self._preprocessing_methods.append(
-            {"task": "handle_class_imbalance", "method": self._config.imbalance_method}
-        )
-        method = self._config.imbalance_method
         sampling_strategy = "auto"
-
-        print(f"\nClass distribution before {method}:")
-        print(y.value_counts())
-
         if method == "oversample":
             sampler = RandomOverSampler(
                 sampling_strategy=sampling_strategy, random_state=self._seed
@@ -232,7 +208,9 @@ class PreprocessDs(BaseTask):
                 )
                 X_resampled, y_resampled = smote.fit_resample(X, y)
             except ValueError as e:
-                print(f"SMOTE failed: {e}. Using RandomOverSampler instead.")
+                self._logger.warning(
+                    f"SMOTE failed: {e}. Using RandomOverSampler instead."
+                )
                 sampler = RandomOverSampler(random_state=self._seed)
                 X_resampled, y_resampled = sampler.fit_resample(X, y)
 
@@ -245,7 +223,9 @@ class PreprocessDs(BaseTask):
                 )
                 X_resampled, y_resampled = smote_tomek.fit_resample(X, y)
             except Exception as e:
-                print(f"SMOTETomek failed: {e}. Using RandomOverSampler instead.")
+                self._logger.warning(
+                    f"SMOTETomek failed: {e}. Using RandomOverSampler instead."
+                )
                 sampler = RandomOverSampler(random_state=self._seed)
                 X_resampled, y_resampled = sampler.fit_resample(X, y)
 
@@ -260,15 +240,14 @@ class PreprocessDs(BaseTask):
                 )
                 X_resampled, y_resampled = adasyn.fit_resample(X, y)
             except Exception as e:
-                print(f"ADASYN failed: {e}. Using RandomOverSampler instead.")
+                self._logger.warning(
+                    f"ADASYN failed: {e}. Using RandomOverSampler instead."
+                )
                 sampler = RandomOverSampler(random_state=self._seed)
                 X_resampled, y_resampled = sampler.fit_resample(X, y)
 
         else:
             return X, y
-
-        print(f"Class distribution after {method}:")
-        print(pd.Series(y_resampled).value_counts())
 
         if isinstance(X_resampled, np.ndarray):
             X_resampled = pd.DataFrame(X_resampled, columns=X.columns)
@@ -282,6 +261,7 @@ class PreprocessDs(BaseTask):
         y = self._df["target"].apply(lambda x: int(x))
 
         test_size = getattr(self._config, "test_size", 0.2)
+        self._log_param("preprocess - split ratio", test_size)
 
         X_train, X_test, y_train, y_test = train_test_split(
             X, y, test_size=test_size, random_state=self._seed, stratify=y, shuffle=True
@@ -294,12 +274,6 @@ class PreprocessDs(BaseTask):
         return self._result
 
     def run(self) -> None:
-        imbalance_stats = self._analyze_class_imbalance(self._df["target"])
-        print("\nClass Imbalance Analysis:")
-        print(f"Class Distribution: {imbalance_stats['class_distribution']}")
-        print(f"Imbalance Ratio: {imbalance_stats['imbalance_ratio']:.2f}")
-        print(f"Is Imbalanced: {imbalance_stats['is_imbalanced']}")
-
         self._handle_missing_values()
         self._handle_outliers()
         self._encode_categorical()
@@ -324,7 +298,7 @@ class PreprocessDs(BaseTask):
         if self._config.show:
             self._show_results()
 
-    def _export_datasets(self, X_train, X_test, y_train, y_test):
+    def _export_datasets(self, X_train, X_test, y_train, y_test) -> None:
         if y_train is not None:
             train_df = pd.concat([X_train, y_train], axis=1)
             test_df = pd.concat([X_test, y_test], axis=1)
@@ -336,25 +310,30 @@ class PreprocessDs(BaseTask):
         train_df.to_csv(self._output_path / "train.csv", index=False)
         test_df.to_csv(self._output_path / "test.csv", index=False)
 
-        print(f"Datasets exported to {self._output_path}/")
+        self._logger.info(f"Datasets exported to {self._output_path}/")
 
-    def _show_results(self):
+    def _show_results(self) -> None:
         """Display preprocessing results"""
-        print("=" * 50)
-        print("PREPROCESSING RESULTS")
-        print("=" * 50)
+        self._loger.info("=" * 50)
+        self._loger.info("PREPROCESSING RESULTS")
+        self._loger.info("=" * 50)
+        imbalance_stats = self._analyze_class_imbalance(self._df["target"])
+        self._loger.info("\nClass Imbalance Analysis:")
+        self._loger.info(f"Class Distribution: {imbalance_stats['class_distribution']}")
+        self._loger.info(f"Imbalance Ratio: {imbalance_stats['imbalance_ratio']:.2f}")
+        self._loger.info(f"Is Imbalanced: {imbalance_stats['is_imbalanced']}")
 
-        print(f"\nOriginal data shape: {self._df.shape}")
-        print(f"Processed train shape: {self.result.train.x.shape}")
-        print(f"Processed test shape: {self.result.test.x.shape}")
+        self._loger.info(f"\nOriginal data shape: {self._df.shape}")
+        self._loger.info(f"Processed train shape: {self.result.train.x.shape}")
+        self._loger.info(f"Processed test shape: {self.result.test.x.shape}")
 
         if self.result.train.y is not None and len(self.result.train.y) > 0:
-            print(f"\nTrain target distribution:")
-            print(self.result.train.y.value_counts())
+            self._loger.info(f"\nTrain target distribution:")
+            self._loger.info(self.result.train.y.value_counts())
 
-        print(f"\nMissing values after processing:")
-        print(f"Train: {self.result.train.x.isnull().sum().sum()}")
-        print(f"Test: {self.result.test.x.isnull().sum().sum()}")
+        self._loger.info(f"\nMissing values after processing:")
+        self._loger.info(f"Train: {self.result.train.x.isnull().sum().sum()}")
+        self._loger.info(f"Test: {self.result.test.x.isnull().sum().sum()}")
 
-        print(f"\nData types after processing:")
-        print(self.result.train.x.dtypes.value_counts())
+        self._loger.info(f"\nData types after processing:")
+        self._loger.info(self.result.train.x.dtypes.value_counts())

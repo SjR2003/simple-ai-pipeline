@@ -1,10 +1,10 @@
 task_name: preprocess_ds
 
-missing_data_method: drop  # 'drop', 'mean', 'median', 'mode', 'knn'
-outlier_method:  # 'remove', 'cap', 'transform'
-normalization_method: standard  # 'minmax', 'standard', 'robust'
-imbalance_method: undersample # 'oversample', 'undersample', 'smote', 'smote_tomek', 'adasyn'
+missing_data_method: knn # 'drop', 'mean', 'median', 'mode', 'knn'
+outlier_method: null # 'remove', 'cap', 'transform'
+normalization_method: standard # 'minmax', 'standard', 'robust'
+imbalance_method: smote_tomek # 'oversample', 'undersample', 'smote', 'smote_tomek', 'adasyn'
 
-test_size: 0.2
-export_ds: true
-show: true
+test_size: 0.3
+export_ds: false
+show: false

@@ -1,22 +1,20 @@
-from sklearn.decomposition import PCA
-from sklearn.manifold import TSNE
-from sklearn.discriminant_analysis import LinearDiscriminantAnalysis as LDA
-import umap.umap_ as umap
-import pandas as pd
-import numpy as np
-import logging
 import shutil
+import joblib
+import logging
 import datetime
 import numpy as np
 import pandas as pd
 from pathlib import Path
+import umap.umap_ as umap
 from typing import Optional
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
+from sklearn.decomposition import PCA
+from mlflow.models.signature import infer_signature
+from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
 
 from core.base_task import BaseTask
 from core.task_registry import register_task
 from tasks.numeric.task_dim_reduction.config import DimReductionConfig, ReductionMethod
+from tasks.numeric.task_dim_reduction.modules.plotter import *
 from tasks.numeric.task_load_ds.result_schema import LoadDsResult
 from tasks.numeric.task_preprocess_ds.result_schema import PreprocessResult
 
@@ -32,6 +30,7 @@ saved_state = None
 class DimReduction(BaseTask):
     def __init__(self, config: dict, input_data: any):
         super().__init__(config, input_data)
+        np.random.seed(self._seed)
         self._reduced_data = None
         self._model = None
         self._explained_variances = {}
@@ -62,7 +61,7 @@ class DimReduction(BaseTask):
     def _validate_config(self) -> None:
         self._config = DimReductionConfig.model_validate(self._config_dict)
 
-    def _load_data(self):
+    def _load_data(self) -> None:
         pass
 
     @property
@@ -80,29 +79,6 @@ class DimReduction(BaseTask):
             "singular_values": pca.singular_values_.tolist(),
         }
         return pd.DataFrame(reduced, columns=[f"PC_{i+1}" for i in range(n_components)])
-
-    def _apply_tsne(self, data: pd.DataFrame, n_components: int) -> pd.DataFrame:
-        if self._config.tsne_use_pca_init and data.shape[1] > 50:
-            pca_init = PCA(
-                n_components=min(50, data.shape[0]),
-                random_state=self._seed,
-            )
-            data_for_tsne = pca_init.fit_transform(data)
-        else:
-            data_for_tsne = data.values
-
-        tsne = TSNE(
-            n_components=n_components,
-            perplexity=self._config.tsne_perplexity,
-            n_iter=self._config.tsne_n_iter,
-            random_state=self._seed,
-            init=self._config.tsne_init,
-        )
-        reduced = tsne.fit_transform(data_for_tsne)
-        self._model = tsne
-        return pd.DataFrame(
-            reduced, columns=[f"TSNE_{i+1}" for i in range(n_components)]
-        )
 
     def _apply_umap(
         self, data: pd.DataFrame, n_components: int, y: Optional[pd.Series] = None
@@ -126,270 +102,26 @@ class DimReduction(BaseTask):
         )
 
     def _apply_lda(
-        self, data: pd.DataFrame, n_components: int, y: pd.Series
+        self, data: pd.DataFrame, n_components: int, labels: pd.Series
     ) -> pd.DataFrame:
-        n_classes = len(y.unique())
-        n_components = min(n_components, n_classes - 1)
+        n_classes = len(np.unique(labels))
+        max_components = n_classes - 1
 
-        lda = LDA(n_components=n_components)
-        reduced = lda.fit_transform(data, y)
+        if n_components > max_components:
+            self._logger.warning(
+                f"LDA can only produce {max_components} components (n_classes - 1). "
+                f"Reducing from {n_components} to {max_components}"
+            )
+            n_components = max_components
+
+        lda = LinearDiscriminantAnalysis(n_components=n_components)
+        reduced_data = lda.fit_transform(data, labels)
         self._model = lda
-        self._explained_variances["lda"] = {
-            "explained_variance_ratio": (
-                lda.explained_variance_ratio_.tolist()
-                if hasattr(lda, "explained_variance_ratio_")
-                else []
-            )
-        }
-        return pd.DataFrame(
-            reduced, columns=[f"LDA_{i+1}" for i in range(n_components)]
-        )
 
-    def _visualize_results(
-        self,
-        reduced_data: pd.DataFrame,
-        y: Optional[pd.Series] = None,
-        title: str = "Dimension Reduction",
-    ) -> None:
-        if reduced_data.shape[1] < 2:
-            return
-
-        n_cols = min(2, reduced_data.shape[1])
-
-        if n_cols == 2 and reduced_data.shape[1] >= 3:
-            fig = make_subplots(
-                rows=1,
-                cols=2,
-                subplot_titles=(
-                    f"{title} - First Two Components",
-                    f"{title} - First Three Components",
-                ),
-                specs=[[{"type": "scatter"}, {"type": "scatter3d"}]],
-            )
-
-            if y is not None:
-                fig.add_trace(
-                    go.Scatter(
-                        x=reduced_data.iloc[:, 0],
-                        y=reduced_data.iloc[:, 1],
-                        mode="markers",
-                        marker=dict(
-                            color=y,
-                            colorscale="Viridis",
-                            size=6,
-                            opacity=0.6,
-                            showscale=True,
-                            colorbar=dict(x=0.45, thickness=15),
-                        ),
-                        showlegend=False,
-                    ),
-                    row=1,
-                    col=1,
-                )
-            else:
-                fig.add_trace(
-                    go.Scatter(
-                        x=reduced_data.iloc[:, 0],
-                        y=reduced_data.iloc[:, 1],
-                        mode="markers",
-                        marker=dict(size=6, opacity=0.6),
-                        showlegend=False,
-                    ),
-                    row=1,
-                    col=1,
-                )
-
-            fig.update_xaxes(title_text=f"{reduced_data.columns[0]}", row=1, col=1)
-            fig.update_yaxes(title_text=f"{reduced_data.columns[1]}", row=1, col=1)
-
-            if y is not None:
-                fig.add_trace(
-                    go.Scatter3d(
-                        x=reduced_data.iloc[:, 0],
-                        y=reduced_data.iloc[:, 1],
-                        z=reduced_data.iloc[:, 2],
-                        mode="markers",
-                        marker=dict(
-                            color=y,
-                            colorscale="Viridis",
-                            size=4,
-                            opacity=0.6,
-                            showscale=True,
-                            colorbar=dict(x=1.0, thickness=15),
-                        ),
-                        showlegend=False,
-                    ),
-                    row=1,
-                    col=2,
-                )
-            else:
-                fig.add_trace(
-                    go.Scatter3d(
-                        x=reduced_data.iloc[:, 0],
-                        y=reduced_data.iloc[:, 1],
-                        z=reduced_data.iloc[:, 2],
-                        mode="markers",
-                        marker=dict(size=4, opacity=0.6),
-                        showlegend=False,
-                    ),
-                    row=1,
-                    col=2,
-                )
-
-            fig.update_scenes(
-                xaxis_title=f"{reduced_data.columns[0]}",
-                yaxis_title=f"{reduced_data.columns[1]}",
-                zaxis_title=f"{reduced_data.columns[2]}",
-                row=1,
-                col=2,
-            )
-
-        else:
-            fig = make_subplots(
-                rows=1, cols=1, subplot_titles=(f"{title} - First Two Components",)
-            )
-
-            if y is not None:
-                fig.add_trace(
-                    go.Scatter(
-                        x=reduced_data.iloc[:, 0],
-                        y=reduced_data.iloc[:, 1],
-                        mode="markers",
-                        marker=dict(
-                            color=y,
-                            colorscale="Viridis",
-                            size=6,
-                            opacity=0.6,
-                            showscale=True,
-                        ),
-                        showlegend=False,
-                    )
-                )
-            else:
-                fig.add_trace(
-                    go.Scatter(
-                        x=reduced_data.iloc[:, 0],
-                        y=reduced_data.iloc[:, 1],
-                        mode="markers",
-                        marker=dict(size=6, opacity=0.6),
-                        showlegend=False,
-                    )
-                )
-
-            fig.update_xaxes(title_text=f"{reduced_data.columns[0]}")
-            fig.update_yaxes(title_text=f"{reduced_data.columns[1]}")
-
-        fig.update_layout(
-            title=f"Dimension Reduction using {self._config.method.upper()}",
-            height=500,
-            showlegend=False,
-            template="plotly_white",
-        )
-
-        if self._config.show:
-            fig.show()
-        fig.write_html(self._output_path / "dimension_reduction.html")
-        self._log_artifact(
-            self._output_path / "dimension_reduction.html",
-            "dim-reduction - dimension_reduction",
-        )
-
-    def _plot_explained_variance(self) -> None:
-        if "pca" not in self._explained_variances:
-            return
-
-        explained_variance = self._explained_variances["pca"][
-            "explained_variance_ratio"
-        ]
-        cumulative_variance = self._explained_variances["pca"]["cumulative_variance"]
-
-        fig = make_subplots(
-            rows=1,
-            cols=2,
-            subplot_titles=(
-                "Variance per Principal Component",
-                "Cumulative Explained Variance",
-            ),
-        )
-
-        fig.add_trace(
-            go.Bar(
-                x=list(range(1, len(explained_variance) + 1)),
-                y=explained_variance,
-                opacity=0.7,
-                marker_color="blue",
-                name="Explained Variance",
-                showlegend=False,
-            ),
-            row=1,
-            col=1,
-        )
-
-        fig.add_trace(
-            go.Scatter(
-                x=list(range(1, len(cumulative_variance) + 1)),
-                y=cumulative_variance,
-                mode="lines+markers",
-                line=dict(dash="dash", color="red", width=2),
-                marker=dict(size=8),
-                name="Cumulative Variance",
-                showlegend=True,
-            ),
-            row=1,
-            col=2,
-        )
-
-        fig.add_hline(
-            y=0.95,
-            line_dash="dash",
-            line_color="green",
-            opacity=0.7,
-            annotation_text="95% Variance",
-            annotation_position="top left",
-            row=1,
-            col=2,
-        )
-
-        fig.add_hline(
-            y=0.90,
-            line_dash="dash",
-            line_color="yellow",
-            opacity=0.7,
-            annotation_text="90% Variance",
-            annotation_position="top left",
-            row=1,
-            col=2,
-        )
-
-        fig.update_xaxes(title_text="Principal Component", row=1, col=1)
-        fig.update_yaxes(title_text="Explained Variance Ratio", row=1, col=1)
-
-        fig.update_xaxes(title_text="Number of Components", row=1, col=2)
-        fig.update_yaxes(title_text="Cumulative Explained Variance", row=1, col=2)
-
-        fig.update_layout(
-            title="PCA Explained Variance Analysis",
-            height=500,
-            template="plotly_white",
-            showlegend=True,
-            legend=dict(
-                orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1
-            ),
-        )
-
-        if self._config.show:
-            fig.show()
-
-        fig.write_html(
-            self._output_path / "explained_variance_per_principal_component.html"
-        )
-        self._log_artifact(
-            self._output_path / "explained_variance_per_principal_component.html",
-            "dim-reduction - explained_variance_per_principal_component",
-        )
+        columns = [f"LDA_{i+1}" for i in range(n_components)]
+        return pd.DataFrame(reduced_data, columns=columns)
 
     def run(self) -> None:
-        print(f"Starting dimension reduction using {self._config.method}...")
         train_data = self._injected_data.train.x
         train_labels = self._injected_data.train.y
         test_data = self._injected_data.test.x
@@ -399,17 +131,12 @@ class DimReduction(BaseTask):
         if self._config.method == ReductionMethod.PCA:
             reduced_train = self._apply_pca(train_data, self._config.n_components)
 
-        elif self._config.method == ReductionMethod.TSNE:
-            reduced_train = self._apply_tsne(train_data, self._config.n_components)
-
         elif self._config.method == ReductionMethod.UMAP:
             reduced_train = self._apply_umap(
                 train_data, self._config.n_components, train_labels
             )
 
         elif self._config.method == ReductionMethod.LDA:
-            if train_labels is None:
-                raise ValueError("LDA requires labels for training data")
             reduced_train = self._apply_lda(
                 train_data, self._config.n_components, train_labels
             )
@@ -420,38 +147,72 @@ class DimReduction(BaseTask):
                 self._model.transform(test_data),
                 columns=[f"PC_{i+1}" for i in range(self._config.n_components)],
             )
+
         elif self._config.method == ReductionMethod.LDA and self._model:
             reduced_test = pd.DataFrame(
                 self._model.transform(test_data),
-                columns=[f"LDA_{i+1}" for i in range(self._config.n_components)],
+                columns=[
+                    f"LDA_{i+1}"
+                    for i in range((len(np.unique(self._injected_data.train.y)) - 1))
+                ],
             )
 
-        self._visualize_results(
+            self._config.n_components = len(np.unique(self._injected_data.train.y)) - 1
+
+        elif self._config.method == ReductionMethod.UMAP and self._model:
+            reduced_test = pd.DataFrame(
+                self._model.transform(test_data),
+                columns=[f"UMAP_{i+1}" for i in range(self._config.n_components)],
+            )
+
+        vis_result_path = visualize_results(
             reduced_train,
+            self._config.method,
+            self._output_path,
             train_labels,
+            self._config.show,
             f"Training Data - {self._config.method.upper()}",
+        )
+        self._log_artifact(
+            vis_result_path,
+            "dim-reduction - dimension_reduction",
         )
 
         if self._config.method == ReductionMethod.PCA:
-            self._plot_explained_variance()
+            vis_result_path = plot_explained_variance(
+                self._explained_variances, self._output_path, self._config.show
+            )
+            if vis_result_path is not None:
+                self._log_artifact(
+                    vis_result_path,
+                    "dim-reduction - explained_variance_per_principal_component",
+                )
 
-        print(f"Dimension reduction completed successfully!")
-        print(f"Original shape: {train_data.shape}")
-        print(f"Reduced shape: {reduced_train.shape}")
+        self._logger.info(f"Dimension reduction completed successfully!")
+        self._logger.info(f"Original shape: {train_data.shape}")
+        self._logger.info(f"Reduced shape: {reduced_train.shape}")
 
         if (
             self._config.method == ReductionMethod.PCA
             and "pca" in self._explained_variances
         ):
-            explained = self._explained_variances["pca"]["explained_variance_ratio"]
             cumulative = self._explained_variances["pca"]["cumulative_variance"]
-            print(f"Explained variance by components: {explained}")
-            print(f"Cumulative variance: {cumulative[-1]:.4f}")
+            self._log_param("dim-red PCA variance", f"{cumulative[-1]:.4f}")
+            self._logger.info(f"Cumulative variance: {cumulative[-1]:.4f}")
+
+        model_type_name = type(self._model).__name__.lower()
+        filepath = self._output_path / f"{model_type_name}.joblib"
+        joblib.dump(self._model, filepath)
+        signature = infer_signature(train_data, reduced_train)
+
+        self._log_param("dim-red method", self._config.method)
+        self._log_param(f"dim-red component", self._config.n_components)
+        self._model._model = self._model
+        self._log_model(
+            f"{model_type_name}_model", model_type="sklearn", signature=signature
+        )
 
         self._result = PreprocessResult(
             train=LoadDsResult(x=reduced_train, y=train_labels),
             test=LoadDsResult(x=reduced_test, y=test_labels),
         )
-
-        model_type_name = type(self._model).__name__.lower()
-        self._log_model(f"{model_type_name}_model", model_type="sklearn")

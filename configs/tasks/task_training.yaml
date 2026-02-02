@@ -1,19 +1,40 @@
 task_name: training
 
+model_type: lightgbm # sklearn, pytorch, catboost, xgboost, lightgbm
+
 # model_file_name: pytorch_mlp
-# sklearn_model_path: null
-
 # model_params:
-#   hidden_sizes: 
-#     - 64
+#   hidden_sizes:
 #     - 32
-#   dropout_rate: 0.2
-#   learning_rate: 0.001
+#     - 16
+#   dropout_rate: 0.4
+#   learning_rate: 0.0001
+# train_params:
+#   epochs: 200
+#   batch_size: 32
+#   patience: 20
+#   restore_best_weights: True
+#   monitor: val_loss
 
+# model_file_name: sklearn_rf_classifier
+# model_params:
+#   n_estimators: 50
+#   n_jobs: -1
 
-model_file_name: sklearn_classifier
-sklearn_model_path: sklearn.ensemble.GradientBoostingClassifier
-
+model_file_name: lgbm_classifier
 model_params:
-  n_estimators: 20
-  learning_rate: 0.1
+  n_estimators: 200
+  learning_rate: 0.01
+  max_depth: 6
+
+# model_file_name: catboost_classifier
+# model_params:
+#   iterations: 200
+#   learning_rate: 0.01
+#   depth: 6
+
+# model_file_name: xgb_classifier
+# model_params:
+#   n_estimators: 200
+#   learning_rate: 0.01
+#   max_depth: 6

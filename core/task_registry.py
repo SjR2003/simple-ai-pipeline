@@ -1,4 +1,3 @@
-# core/task_registry.py
 TASKS = {}
 
 

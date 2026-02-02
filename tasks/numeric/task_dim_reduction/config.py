@@ -5,7 +5,6 @@ from enum import Enum
 
 class ReductionMethod(str, Enum):
     PCA = "pca"
-    TSNE = "tsne"
     UMAP = "umap"
     LDA = "lda"
 
@@ -23,19 +22,6 @@ class DimReductionConfig(BaseModel):
     show: bool = Field(default=True, description="Show visualization plots")
 
     pca_svd_solver: str = Field(default="auto", description="SVD solver for PCA")
-
-    tsne_perplexity: float = Field(
-        default=30.0, ge=5.0, le=50.0, description="Perplexity parameter for t-SNE"
-    )
-    tsne_n_iter: int = Field(
-        default=1000, ge=250, le=5000, description="Number of iterations for t-SNE"
-    )
-    tsne_init: str = Field(
-        default="random", description="Initialization method for t-SNE"
-    )
-    tsne_use_pca_init: bool = Field(
-        default=True, description="Use PCA initialization for high-dim data"
-    )
 
     umap_n_neighbors: int = Field(
         default=15, ge=2, le=100, description="Number of neighbors for UMAP"
