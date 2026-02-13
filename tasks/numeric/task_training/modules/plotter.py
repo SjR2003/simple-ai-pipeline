@@ -180,7 +180,7 @@ def plot_confusion_matrix(
 def plot_per_class_metrics(
     per_class_metrics: Dict[str, Any],
     output_path: Path,
-    metrics: List[str] = ("precision", "recall", "f1_score"),
+    metrics: List[str] = ("precision", "recall", "f1_score", "accuracy_ovr"),
     title_prefix: str = "Per-class",
 ) -> Dict[str, Path]:
     """

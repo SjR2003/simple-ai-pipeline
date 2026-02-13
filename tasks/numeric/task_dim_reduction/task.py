@@ -173,10 +173,11 @@ class DimReduction(BaseTask):
             self._config.show,
             f"Training Data - {self._config.method.upper()}",
         )
-        self._log_artifact(
-            vis_result_path,
-            "dim-reduction - dimension_reduction",
-        )
+        if vis_result_path is not None:
+            self._log_artifact(
+                vis_result_path,
+                "dim-reduction - dimension_reduction",
+            )
 
         if self._config.method == ReductionMethod.PCA:
             vis_result_path = plot_explained_variance(
@@ -205,7 +206,7 @@ class DimReduction(BaseTask):
         joblib.dump(self._model, filepath)
         signature = infer_signature(train_data, reduced_train)
 
-        self._log_param("dim-red method", self._config.method)
+        self._log_param("dim-red method", self._config.method.value)
         self._log_param(f"dim-red component", self._config.n_components)
         self._model._model = self._model
         self._log_model(

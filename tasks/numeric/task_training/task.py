@@ -71,6 +71,9 @@ class Training(BaseTask):
         params["random_state"] = self._seed
         params["input_size"] = self._train_data.x.shape[1]
         params["output_size"] = classes
+        for param, value in params.items():
+            self._log_param(f"train_{param}", value)
+
         self._model = model_class(**params)
 
     @property
@@ -116,7 +119,6 @@ class Training(BaseTask):
         train_params["X_val"] = X_test
         train_params["y_val"] = y_test
         history = self._model.train(**train_params)
-
         loss_plot_path, acc_plot_path = plot_history(history, self._output_path)
         self._log_artifact(loss_plot_path, "train - loss curve")
         self._log_artifact(acc_plot_path, "train - accuracy curve")

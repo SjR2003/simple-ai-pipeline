@@ -256,6 +256,41 @@ class PreprocessDs(BaseTask):
 
         return X_resampled, y_resampled
 
+    def _remap_labels(self) -> None:
+        label_map = getattr(self._config, "label_map", None)
+        if not label_map:
+            self._log_param("preprocess - label remap", None)
+            return
+
+        strict = bool(getattr(self._config, "label_map_strict", False))
+        self._log_param(
+            "preprocess - label remap", {"map": label_map, "strict": strict}
+        )
+
+        y = self._df["target"]
+
+        if strict:
+            unknown = set(pd.unique(y)) - set(label_map.keys())
+            if unknown:
+                raise ValueError(
+                    f"label_map_strict=True but found labels not in label_map: {sorted(unknown)}"
+                )
+
+        y_remapped = y.map(label_map)
+        if not strict:
+            y_remapped = y_remapped.where(~y_remapped.isna(), y)
+
+        if y_remapped.isna().any():
+            missing_labels = sorted(set(pd.unique(y)) - set(label_map.keys()))
+            raise ValueError(
+                f"Label remapping produced NaNs. Missing mappings for labels: {missing_labels}"
+            )
+
+        try:
+            self._df["target"] = y_remapped.astype(int)
+        except Exception:
+            self._df["target"] = y_remapped
+
     def _split_data(self) -> tuple:
         X = self._df.drop(columns=["target"])
         y = self._df["target"].apply(lambda x: int(x))
@@ -278,7 +313,7 @@ class PreprocessDs(BaseTask):
         self._handle_outliers()
         self._encode_categorical()
         self._normalize_data()
-
+        self._remap_labels()
         X_train, X_test, y_train, y_test = self._split_data()
         X_train, y_train = self._handle_class_imbalance(X_train, y_train)
 

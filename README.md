@@ -35,6 +35,10 @@ The pipeline supports both **end-to-end runs** and **step-by-step execution**, w
 
 ## Pipeline Stages
 
+<p align="center">
+  <img width="80%" alt="Image" src="https://github.com/user-attachments/assets/26c7d0f0-e1d3-45c4-b2b1-305944ac167e">
+</p>
+
 1. **Load Dataset** (`load_ds`)
 2. **EDA Checkpoint** (`eda_ds`)
 3. **Preprocess** (`preprocess_ds`)

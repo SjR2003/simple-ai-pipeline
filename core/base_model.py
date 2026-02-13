@@ -83,6 +83,9 @@ class BaseMLModel(abc.ABC):
         y_test_np = np.asarray(y_test)
         y_pred_np = np.asarray(y_pred)
 
+        y_test_np = y_test_np.reshape(-1)
+        y_pred_np = y_pred_np.reshape(-1)
+
         labels = np.unique(np.concatenate([y_test_np, y_pred_np], axis=0))
 
         for metric in metrics:

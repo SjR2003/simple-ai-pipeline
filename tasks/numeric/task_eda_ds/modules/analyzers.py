@@ -21,6 +21,7 @@ def analyze_target(y: np.ndarray, random_state: int = 42) -> dict:
 
 def analyze_missing(X: np.ndarray, random_state: int = 42) -> dict:
     np.random.seed(random_state)
+
     nan_mask = np.isnan(X)
 
     return {

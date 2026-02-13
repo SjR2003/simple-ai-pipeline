@@ -8,6 +8,8 @@ class PreprocessDsConfig(BaseModel):
     show: bool
 
     test_size: float = 0.2
+    label_map: Optional[dict] = None
+    label_map_strict: bool = False
     missing_data_method: Optional[str] = None  # 'drop', 'mean', 'median', 'mode', 'knn'
     outlier_method: Optional[str] = None  # 'remove', 'cap', 'transform'
     imbalance_method: Optional[str] = (

@@ -1,28 +1,28 @@
 task_name: tuning
 
 search_method: optuna # grid | random | optuna
-n_trials: 5
+n_trials: 60
 metric: f1_score
 direction: maximize
 
 param_space:
   n_estimators:
     type: int
-    low: 20
-    high: 180
-    step: 10
+    low: 50
+    high: 500
+    step: 50
   max_depth:
     type: int
     low: 3
-    high: 10
+    high: 12
   learning_rate:
     type: float
     low: 0.0001
-    high: 0.003
+    high: 0.01
   epochs:
     type: int
     low: 50
-    high: 600
+    high: 500
     step: 50
   min_samples_leaf:
     type: int
@@ -41,12 +41,12 @@ param_space:
   num_layers:
     type: int
     low: 2
-    high: 4
+    high: 5
   layer_size:
     type: int
     low: 16
-    high: 64
-    step: 16
+    high: 128
+    step: 32
   dropout_rate:
     type: float
     low: 0.05

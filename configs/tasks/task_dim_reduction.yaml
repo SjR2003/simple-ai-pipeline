@@ -1,6 +1,6 @@
 task_name: dim_reduction
 
-method: lda
+method: pca
 n_components: 20
 
 show: false

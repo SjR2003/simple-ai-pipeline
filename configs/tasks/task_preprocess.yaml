@@ -1,10 +1,11 @@
 task_name: preprocess_ds
 
-missing_data_method: knn # 'drop', 'mean', 'median', 'mode', 'knn'
+missing_data_method: null # 'drop', 'mean', 'median', 'mode', 'knn'
 outlier_method: null # 'remove', 'cap', 'transform'
 normalization_method: standard # 'minmax', 'standard', 'robust'
-imbalance_method: smote_tomek # 'oversample', 'undersample', 'smote', 'smote_tomek', 'adasyn'
-
+imbalance_method: oversample # 'oversample', 'undersample', 'smote', 'smote_tomek', 'adasyn'
+label_map: null #  { 0: 0, 1: 1, 2: 1, 3: 1 }
+label_map_strict: false
 test_size: 0.3
 export_ds: false
 show: false
