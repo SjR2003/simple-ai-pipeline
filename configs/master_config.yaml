@@ -2,7 +2,7 @@ task_order:
   - task_eda.yaml
   - task_preprocess.yaml
   - task_eda.yaml
-  # - task_dim_reduction.yaml
-  # - task_eda.yaml
+  - task_dim_reduction.yaml
+  - task_eda.yaml
   - task_training.yaml
   - task_tuning.yaml
